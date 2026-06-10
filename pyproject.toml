@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.13,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "react-rs"
+readme = "README.md"
+license = {file = "License.md"}
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+dependencies = [
+    "polars>=1.41",
+    "pyarrow>=24.0",
+    "numpy>=2.4",
+    "scikit-learn>=1.8",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.0",
+]
+
+[tool.maturin]
+python-source = "python"
+module-name = "react_rs"
+generate-pyi = true

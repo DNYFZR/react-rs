@@ -1,0 +1,26 @@
+[package]
+name = "react-rs"
+version = "0.7.2"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "react_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.27", features = [
+    "experimental-inspect",
+    "extension-module",
+] }
+rand = "0.10"
+rayon = "1.12"
+polars-python = "0.53"
+polars = { version = "0.53", features = [
+    "parquet",
+    "lazy",
+    "cum_agg",
+    "dtype-full",
+    "fmt",
+] }
+pyo3-polars = "0.26.0"
