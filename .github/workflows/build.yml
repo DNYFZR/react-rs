@@ -46,10 +46,12 @@ jobs:
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
+        with:
+          path: artifacts
 
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
           tag: v${{ env.APP_VERSION }}
           name: Release v${{ env.APP_VERSION }}
-          artifacts: $GITHUB_WORKSPACE
+          artifacts: artifacts/*
