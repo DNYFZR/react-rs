@@ -55,5 +55,3 @@ jobs:
           tag: v${{ env.APP_VERSION }}
           name: Release v${{ env.APP_VERSION }}
           artifacts: "artifacts/**"
-          artifactErrorsFailBuild: true
-          generateReleaseNotes: true
