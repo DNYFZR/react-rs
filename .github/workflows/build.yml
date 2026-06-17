@@ -37,16 +37,10 @@ jobs:
           version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
           echo "APP_VERSION=$version" >> $GITHUB_ENV
 
-      - name: Copy build to output
-        shell: bash
-        run: |
-          mkdir output
-          cp target/wheels/*.whl output/
-
       - name: Create OS release
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ matrix.os }}-v${{ env.APP_VERSION }}
-          name: ${{ matrix.os }} release v${{ env.APP_VERSION }}
-          artifacts: output/*.whl
+          name: ${{ matrix.os }}-v${{ env.APP_VERSION }}
+          artifacts: "./target/wheels/*.whl"
           bodyFile: "README.md"
