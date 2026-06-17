@@ -54,4 +54,4 @@ jobs:
         with:
           tag: v${{ env.APP_VERSION }}
           name: Release v${{ env.APP_VERSION }}
-          artifacts: "artifacts/**"
+          artifacts: "/target/wheels/*.whl"
