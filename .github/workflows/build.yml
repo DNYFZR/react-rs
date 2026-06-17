@@ -30,28 +30,17 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: target/wheels
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Get Build Version
+      - name: Get app version
         id: package-version
         shell: bash
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
           echo "APP_VERSION=$version" >> $GITHUB_ENV
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-
-      - name: Create Release
+      - name: Create OS release
         uses: ncipollo/release-action@v1
         with:
-          tag: v${{ env.APP_VERSION }}
-          name: Release v${{ env.APP_VERSION }}
-          artifacts: "**/artifacts/*"
+          tag: ${{ matrix.os }}-v${{ env.APP_VERSION }}
+          name: ${{ matrix.os }} release v${{ env.APP_VERSION }}
+          artifacts: "/target/wheels/*.whl"
+          bodyFile: "README.md"
