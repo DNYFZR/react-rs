@@ -30,18 +30,30 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: target/wheels
 
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
       - name: Get Build Version
         id: package-version
-        shell: pwsh
+        shell: bash
         run: |
-          # Extract version from Cargo.toml using cargo metadata
-          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
-          # Set environment variable for subsequent steps
-          echo "APP_VERSION=$version" >> $env:GITHUB_ENV
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          echo "APP_VERSION=$version" >> $GITHUB_ENV
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
 
       - name: Create Release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action
         with:
-          artifacts: "/target/wheels/*.whl"
-          bodyFile: "README.md"
-          tag: "v${{ env.APP_VERSION}}"
+          tag: v${{ env.APP_VERSION }}
+          name: Release v${{ env.APP_VERSION }}
+          artifacts: "artifacts/**"
+          artifactErrorsFailBuild: true
+          generateReleaseNotes: true
