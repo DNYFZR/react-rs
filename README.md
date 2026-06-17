@@ -1,55 +1,128 @@
 <h1 align="center"><b> REACT_RS </b></h1>
 
+## **Summary**
+
 React_rs (reactors) is Python package with Rust backend functionality for executing Discrete Event simulations in a fast & cost efficient way. 
 
-- The complex elements of the application are developed in Rust, and using Maturin & PyO3, is packaged as a Python wheel, allowing users to run the application without needing to have any elements of the Rust toolchain installed on their system.
+- Exposed Rust functions have a corresponding Python function in the [API definition](python/react_rs/__init__.py) which allows the application to convert the Rust polars DataFrame into a Python polars DataFrame & vice versa.
 
-- There are also native Python components to the package, which can be found in the [Python directory](python/react_rs).
+- There are also native Python components to the package, which are in dedicated scripts in the [Python directory](python/react_rs).
 
-There are a number of aggregation methods that have also been developed to allow the larger simulation outputs to be more human readable : 
+The core functionality of the app is : 
 
-- Event / cost based aggregations are summaries of the totals for each simulation & timestep
+- Fit, adjust & generate of a range of Weibull model survival curves
 
-- Profile based aggregation creates a summary of the count of items ages at each timestep within each simulation iteration.
+- Simulation of discrete events over a user-defined number of timesteps & simulations based on the survival curve in the probabilities column of the input dataset - these can be from the internal Weibull module, or from any other user-defined model
 
-Exposed Rust functions have a corresponding Python function in the [API definition](python/react_rs/__init__.py) which allows the application to convert the Rust output (typically a Rust Polars DataFrame) into a Python Object (typically a Python Polars DataFrame).
+- Application of financial limits to simulation outputs, and reallocation of replacement events in line with these limits
 
-There are examples of using the core elements of the Python pacakge in the examples directory, as well as an input parquet file with 100k items that can be run through the system.
+- Event or cost based aggregations are summaries of the totals for each simulation & timestep
 
-- [example](examples/simulate.py) : demonstrates the core simulator & cost based aggregation
+- Profile based aggregation creates a summary of the count of items ages at each timestep within each simulation iteration
 
-- [example](examples/constrain.py) : demonstrates the ability to apply financial constraints to a simulated output & also has a cost based aggregation
+## **Usage**
 
-## Development
+```py
+import polars as pl
+import react_rs
 
-### Build
+# Setup survival curve config
+model_config = {
+    "general": {"states": [15, 25], "values": [0.95, 0.4]},
+    "short": {"base_model": "general", "mean_age": 15},
+    "medium": {"base_model": "general", "mean_age": 25},
+    "long": {"base_model": "general", "mean_age": 35},
+}
 
-- Application build requirements can be found in [Rust build spec](Cargo.toml) & the [Python build spec](pyproject.toml).
+# Generate survival curves via Weibull module
+wb = react_rs.Weibull()
 
-- The [PowerShell build script](.github/scripts/build.ps1) can be used to test & build the library.
+for model, params in model_config.items():
+    # Fit method auto-handles base model & adjustments to mean
+    wb.fit(model_name=model, **params)
 
-### Testing
+# Generate survival curve DataFrame under 'curves' attribute
+wb.generate()
 
-- Rust testing is written within each module & can be executed by running **cargo test**
+# Join survival curves DataFrame to input DataFrame
+df = pl.read_parquet("./tests/data/input.parquet").join(
+    pl.DataFrame({"model": wb.curves.keys(), "curve": wb.curves.values()}),
+    "model",
+    "left",
+)
 
-- Python test scripts are stored in the tests directory
+# Execute simulation in Rust
+sim_result = react_rs.simulate(
+    df=df,
+    id_col="uuid",
+    age_col="step_0",
+    cost_col="value",
+    probs_col="curve",
+    n_sims=100,
+    n_steps=50,
+    parallel_limit=10,
+)
 
-- Data in the tests directory is utilised by Rust & Python tests 
+# Constrain simulation output in Rust
+sim_result_constrained = react_rs.constrain(
+    df=sim_result,
+    constrain_steps=30, # limit steps taken through constraint system
+    iter_regex="step",
+    cost_col="cost",
+    constraints=[int(50e6) for _ in range(30)],
+    partition_by="sim_id",
+    parallel_limit=10,
+)
 
-- Functionality in both [lib.rs](src/lib.rs) & [__init__.py](python/react_rs/__init__.py) is covered by Rust testing within the relevant module e.g. parquet file i/o is tested in [the IO module](src/io.rs)
+# Aggregate simulation outputs
+sim_result_agg = react_rs.aggregate(
+    df=sim_result,
+    partition_by="sim_id",
+    iter_regex="step",
+    target_value=0,
+    cost_col="cost", # None if events are req'd
+)
 
-### Release
+sim_result_const_agg = react_rs.aggregate(
+    df=sim_result_constrained,
+    partition_by="sim_id",
+    iter_regex="step",
+    target_value=0,
+    cost_col="cost",
+)
 
-- The current [build configuration](.github/workflows/build.yml) is setup to build for Windows, Linux & MacOS
+# Age profile across iterations & timesteps
+sim_profile = react_rs.profile(
+    df=sim_result,
+    partition_by="sim_id",
+    iter_regex="step",
+)
 
-- There is a [CI script](.github/scripts/CI.yml) which was autogenerated by Maturin when the project was setup.
+sim_constrained_profile = react_rs.profile(
+    df=sim_result_constrained,
+    partition_by="sim_id",
+    iter_regex="step",
+)
+```
 
-## Notes
+## **Development**
 
-- Breaking changes should be anticipated prior to the build reaching v1.0.1
+### **Build**
 
-- Within [__init__.py](python/react_rs/__init__.py), IDE's may highlight imports from the react_rs package with an error - this is normal prior to running :
+The [build workflow](.github/workflows/build.yml) is configured to build for Windows, Linux & MacOS :
 
-  - RECOMMENDED : **maturin build** & then running **python -m pip install target\wheels\<latest>.whl** 
+- Build dependencies can be found in [Rust](Cargo.toml) & [Python](pyproject.toml) build specs.
 
-  - ALT OPTION : **maturin develop** - which builds a dev version of the Rust project & installs it in the local Python virutal environment
+- Outputs are stored as action pipeline artifacts
+
+- An automated release is created for each new version of the app
+
+### **Test**
+
+Python test scripts are stored in the [tests](tests) directory, along with a sample dataset of 100k assets. 
+
+These tests call all of the functionality within the native Python code & the Rust backend. At this stage there are no direct Rust tests, primarily due to issues with running cargo tests on Maturin / PyO3 projects. 
+
+### **Notes**
+
+- When working on [__init__.py](python/react_rs/__init__.py), your IDE may highlight imports from the react_rs package with an error - this is normal and can be ignored.

@@ -1,0 +1,40 @@
+name: Test
+
+on:
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@stable
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r pyproject.toml
+
+      - name: Install app via Maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          command: develop
+          args: --release
+
+      - name: Install Python test dependencies
+        run: pip install pytest mock codecov pydocstyle pytest-cov pylint pylint_junit
+
+      - name: Run tests
+        run: pytest -v tests/ --doctest-modules --junitxml=unit-testresults.xml --cov=src/ --cov-append --cov-report=xml:xmlcov --cov-report=html:htmlcov
+
+      - name: Publish reuslts
+        uses: EnricoMi/publish-unit-test-result-action@v2

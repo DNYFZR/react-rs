@@ -1,11 +1,10 @@
 // Discrete Event Model
 // Built with Rust & Compiled into a Python Library via PyO3 & Maturin
 mod agg;
-mod io;
 mod sim;
 mod tx;
 
-use pyo3::prelude::*;
+use pyo3::prelude::pymodule;
 
 #[pymodule]
 mod react_rs {
@@ -51,13 +50,15 @@ mod react_rs {
         }
     }
 
+    // Exposed Functions
     #[pyfunction]
     fn simulate(
         df: &Bound<'_, PyAny>,
         id_col: &str,
         age_col: &str,
         cost_col: &str,
-        probabilities: Vec<f64>,
+        probs_col: &str,
+        // probabilities: Vec<f64>,
         n_sims: i64,
         n_steps: i64,
         para_limit: i64,
@@ -70,6 +71,7 @@ mod react_rs {
         let uuids = tx::col_to_vec_str(&df, id_col);
         let states = tx::col_to_vec_i64(&df, age_col);
         let costs = tx::col_to_vec_i64(&df, cost_col);
+        let probabilities = tx::array_col_to_vec_f64(&df, probs_col);
 
         // Execute discrete event simulation
         return return_py_dataframe(sim::engine(

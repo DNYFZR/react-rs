@@ -1,30 +1,20 @@
-# Weibull Simulation Module
-import math
-import random as rd
+# Weibull Survival Curve Generation Module
+from math import gamma
+from typing import Dict, List, Self, Tuple
 
 import numpy as np
-import polars as pl
 from sklearn.linear_model import LinearRegression
 
 
 class Weibull:
-    """Cofigure, fit & execute a Weibull Simulation"""
+    """Fit Weibull models & generate survival curves..."""
 
-    def __init__(self, n_iters: int | None = None):
-        self.params = {}
-        self.probabilities = pl.DataFrame
-        self.n_iters = 1 if n_iters is None or n_iters < 1 else n_iters
-
-    @staticmethod
-    def survival_function(x, shape, scale):
-        """
-        Weibull survival function.  The survival function is the probability
-        that the variate takes a value greater than x.
-        """
-        return np.exp(-((x / scale) ** shape))
+    def __init__(self):
+        self.models: Dict[str, Tuple[float, float]] = {}
+        self.curves: Dict[str, List[float]] = {}
 
     @staticmethod
-    def apply_survival_function(shape, scale, max_value=200, cond_prob=True):
+    def apply_survival_function(shape, scale, max_value=200) -> List[float]:
         """
         Applies the Weibull survival function to dataset.  Default output provides the conditional
         survival probability - given survived to time x, probability of surviving to time x+1. If
@@ -32,17 +22,13 @@ class Weibull:
         """
 
         # calculate survival probability over value range
-        probs = np.arange(max_value + 1)
-        probs = Weibull.survival_function(probs, shape=shape, scale=scale)
+        probs = np.exp(-((np.arange(max_value + 1) / scale) ** shape))
 
         # convert probability to conditional, given survival to previous value
-        if cond_prob:
-            probs = np.concatenate(([probs[1]], probs[2:] / (probs[1:-1] + 0.0000001)))
-
-        return probs
+        return list(np.concatenate(([probs[1]], probs[2:] / (probs[1:-1] + 0.0000001))))
 
     @staticmethod
-    def fit_weibull_params(ages, values):
+    def fit_weibull_model(ages, values) -> Tuple[float, float]:
         """
         Performs linear regression on survival ages, values to estimate shape and scale parameters.
         Output is returned a tuple.
@@ -58,142 +44,92 @@ class Weibull:
 
         return (shape, scale)
 
-    @staticmethod
-    def adjust_scale_params(shape, mean_age):
+    def fit(
+        self,
+        model_name: str | None = None,
+        states: List[int] | None = None,
+        values: List[float] | None = None,
+        base_model: str | None = None,
+        mean_age: int | None = None,
+    ) -> Self:
         """
-        Adjust shape parameter using mean age value.
-        """
-        return (shape, mean_age / math.gamma(1 + 1 / shape))
+        Generates fit parameters for supplied model configuration, and allows users
+        to create additional model variations based on an adjusted mean.
 
-    def _adjust_model(self, base_model, adjust_value, model_name):
-        """
-        This is currently a method that is used to support the asset replacement
-        model that adjusts the original weibull fit but adjusting the scale based
-        on a revised mean age.  This has been generalised to support adjustments
-        for other models, but will not have any impact on non-weibull methods.
-        Parameters :
-            - base_model (str) : name of the base model that will be used to create modified model
-        adjust_value (int) : the value to be used to adjust the model
-        model_name (str) : name of the new model
-        Returns :
-            - saved to model_params attribute - dictionary entry with key=model_name, value=model added
-        """
-        shape = self.params[base_model][0]
-        self.params[model_name] = self.adjust_scale_params(
-            shape=shape, mean_age=adjust_value
-        )
+        To generate a base model, users should supply :
+            - model_name
+            - states
+            - values
 
-        return self
+        To adjust a configured base model to a new mean survival age, users should supply :
+            - base_model
+            - mean_age
 
-    def survival_curve(
-        self, states, values=None, model_name: str = "default", uncertainty=0.1
-    ):
-        """
-        Fits/loads a model that will be used for simulation.  The input values will
-        vary depending on the method specified as part of the constructor. This is
-        currently configured for two methods:
+        Inputs
+        ---
+        - model_name: string name for base model configuration
+        - states : list[int] representing survival ages
+        - values : list[int] representing survival probabilities
+        - base_model : string name of model configuration to apply adjusted mean survival age
+        - mean_age : int value of mean survival age to be used to adjust a base model
 
-        The initial method call will create and assign a dictionary to the model attribute.
-        Subsequent method calls will add or modify existing elements. There is no method
-        to remove a model at this time.
-
-        Parameters :
-            - states : array_like - data containing survival ages
-            - values : array_like - data containing survival probability at given state
-            - model name : string/int (optional) - name to be assigned to the model
-        Returns :
-            - saved to model_params attribute - dictionary entry with key=model_name, value=model added
-        """
+        Returns
+        ---
+        self
 
         """
-        Configures model_params for use in the simulator.  This is completed individually for each
-        model added to model_params.  The n_iters argument specifies the number of versions of each
-        model to generate, each being modified by the uncertainty argument.
+        # Configure a base model
+        if (
+            isinstance(model_name, str)
+            and isinstance(states, list)
+            and isinstance(values, list)
+        ):
+            self.models[model_name] = self.fit_weibull_model(ages=states, values=values)
 
-        Subsequent calls to this method will overwrite previous calls.
+        # Configure an adjusted model
+        elif base_model not in self.models.keys():
+            raise ValueError(
+                f"Selected base_model has not been configured : {base_model}"
+            )
 
-        Parameters :
-            - n_iters (int) : number of model iterations, if set to
-        adjust (float) : range to +/- for varying shape / scale parameters for each iteration
-        Returns :
-            - saved to probs attribute - pyspark.sql.dataframe.DataFrame
-        """
+        elif (
+            isinstance(base_model, str)
+            and isinstance(model_name, str)
+            and isinstance(mean_age, int)
+        ):
+            shape = self.models[base_model][0]
+            self.models[model_name] = (shape, mean_age / gamma(1 + 1 / shape))
 
-        # Fit model params
-        model = self.fit_weibull_params(ages=states, values=values)
-
-        if self.params is None:
-            self.params = {model_name: model}
         else:
-            self.params[model_name] = model
-
-        # Configure parameters
-        probs = []
-        for key, value in self.params.items():
-            for j in range(1, self.n_iters + 1):
-                if j == 1:
-                    shape_iter = value[0]
-                    scale_iter = value[1]
-                    probs = [
-                        {
-                            "model_iteration": j,
-                            "model": key,
-                            "prob": [
-                                float(x)
-                                for x in self.apply_survival_function(
-                                    shape=shape_iter, scale=scale_iter
-                                )
-                            ],
-                        }
-                    ]
-                else:
-                    shape_iter = (
-                        value[0] + rd.uniform(-uncertainty, uncertainty) * value[0]
-                    )
-                    scale_iter = (
-                        value[1] + rd.uniform(-uncertainty, uncertainty) * value[1]
-                    )
-                    probs.append(
-                        {
-                            "model_iteration": j,
-                            "model": key,
-                            "prob": [
-                                float(x)
-                                for x in self.apply_survival_function(
-                                    shape=shape_iter, scale=scale_iter
-                                )
-                            ],
-                        }
-                    )
-
-            # Configure DataFrame
-            if list(self.params)[0] == key:
-                self.probabilities = pl.DataFrame(probs)
-
-            elif isinstance(self.probabilities, pl.DataFrame):
-                self.probabilities = pl.concat(
-                    [self.probabilities, pl.DataFrame(probs)]
-                )
-
-            else:
-                raise TypeError("probs attribute should be of type List or DataFrame")
+            raise ValueError("Incorrect parameters passed to fit method...")
 
         return self
 
+    def generate(self, n_steps: int = 200) -> Self:
+        """
+        Generate survival curves for configured models
 
-if __name__ == "__main__":
-    model_config = {
-        "general": {"states": [15, 25], "values": [0.95, 0.4], "model_name": "general"},
-        "short": {"base_model": "general", "adjust_value": 15, "model_name": "short"},
-        "medium": {"base_model": "general", "adjust_value": 25, "model_name": "medium"},
-        "long": {"base_model": "general", "adjust_value": 35, "model_name": "long"},
-    }
+        Input
+        ---
+        - n_steps : int representing the number of desired steps in each survival curve
 
-    check = Weibull().survival_curve(**model_config["general"])
-    print(check.probabilities)
+        Returns
+        ---
+        self
+        """
+        if len(self.models) == 0:
+            raise AttributeError("""At least one model should be configured
+                via Weibull.fit() before running Weibull.generate()...
+            """)
 
-    for model, params in model_config.items():
-        if model != "general":
-            check._adjust_model(**params)
-            print(check.params)
-            print(check.probabilities)
+        for model, params in self.models.items():
+            self.curves[model] = [
+                float(x)
+                for x in self.apply_survival_function(
+                    shape=params[0],
+                    scale=params[1],
+                    max_value=n_steps,
+                )
+            ]
+
+        return self

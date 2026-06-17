@@ -1,4 +1,4 @@
-// Transformation Module
+// Data Transformation Module
 use polars::prelude::*;
 use rand::{self, RngExt};
 use rayon::prelude::*;
@@ -46,12 +46,8 @@ pub fn constrain_parallel(
         .collect();
 
     // Extract unique values from partition col
-    let sim_ids: Vec<i64> = table
-        .column(partition_by)?
-        .unique()?
-        .i64()?
-        .into_no_null_iter()
-        .collect();
+    let mut sim_ids: Vec<i64> = col_to_vec_i64(&table, partition_by);
+    sim_ids.dedup();
 
     // Map partitions to vec
     let mut table_chunks: Vec<DataFrame> = vec![];
@@ -94,12 +90,12 @@ pub fn constrain_parallel(
         let end_idx = start_idx + (batch_size - 1);
 
         // Should we change this to run over sim_id vec & filter table ???
-        let processed_chunks = table_chunks[start_idx..end_idx]
+        let processed_chunks = table_chunks[start_idx..=end_idx]
             .into_par_iter()
             .map(|chunk| {
                 let mut df_sim = chunk.clone();
                 let mut thrd: rand::rngs::SmallRng = rand::make_rng();
-                let n_rows = df_sim.shape().0;
+                let n_rows = df_sim.height();
 
                 for (idx, col_name) in &active_cols {
                     // Add columns for random ordering & applied costs
@@ -138,13 +134,13 @@ pub fn constrain_parallel(
 
                     // Increase age if cost is above set limit
                     // use idx - 1 as we skip step 0 (init state)
-                    let step_limit = lit(limit_array[*idx - 1 as usize]);
+                    let step_limit = lit(limit_array[*idx - 1 as usize] as f64);
                     df_sim = df_sim
                         .lazy()
                         .with_columns([when(
-                            col(col_name)
-                                .eq(lit(0))
-                                .and(col("totaliser").lt(step_limit)),
+                            col("totaliser")
+                                .lt(step_limit)
+                                .and(col(col_name).eq(lit(0 as i64))),
                         )
                         .then(col(col_name))
                         .otherwise(col(&format!("step_{}", idx - 1)) + lit(1))
@@ -214,7 +210,7 @@ pub fn transpose(v: &Vec<Vec<i64>>) -> Vec<Vec<i64>> {
 pub fn col_to_vec_i64(df: &DataFrame, col: &str) -> Vec<i64> {
     return df
         .column(col)
-        .expect("failedto get col...")
+        .expect("failed to get col...")
         .i64()
         .expect("failed to get i64 array")
         .into_iter()
@@ -222,39 +218,33 @@ pub fn col_to_vec_i64(df: &DataFrame, col: &str) -> Vec<i64> {
         .collect();
 }
 
+pub fn array_col_to_vec_f64(df: &DataFrame, col: &str) -> Vec<Vec<f64>> {
+    let arr = df.column(col).unwrap().list().unwrap();
+
+    let mut out = Vec::with_capacity(arr.len());
+
+    for opt_list in arr.into_iter() {
+        let list = opt_list
+            .ok_or_else(|| PolarsError::ComputeError("null in array column".into()))
+            .unwrap();
+        let vals = list
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect::<Vec<f64>>();
+        out.push(vals);
+    }
+
+    return out;
+}
+
 pub fn col_to_vec_str(df: &DataFrame, col: &str) -> Vec<String> {
     return df
         .column(col)
-        .expect("failedto get col...")
+        .expect("failed to get col...")
         .str()
         .expect("failed to get i64 array")
         .into_iter()
         .map(|v| String::from(v.unwrap()))
         .collect();
-}
-
-#[test]
-fn test_transpose() {
-    let test: Vec<Vec<i64>> = vec![vec![1], vec![0], vec![1]];
-    let res = transpose(&vec![vec![1, 0, 1]]);
-
-    assert_eq!(test, res);
-}
-
-#[test]
-fn test_col_to_vec_i64() {
-    use crate::io;
-    let table = io::read_parquet("./tests/data/demo_input.parquet").unwrap();
-    let res = col_to_vec_i64(&table, "step_0");
-
-    assert!(res.len() == 100_000);
-}
-
-#[test]
-fn test_col_to_vec_str() {
-    use crate::io;
-    let table = io::read_parquet("./tests/data/demo_input.parquet").unwrap();
-    let res = col_to_vec_str(&table, "uuid");
-
-    assert!(res.len() == 100_000);
 }

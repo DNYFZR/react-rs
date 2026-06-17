@@ -1,4 +1,5 @@
 // Aggregation Module
+use crate::tx::col_to_vec_i64;
 use polars::prelude::*;
 use rayon::prelude::*;
 
@@ -25,11 +26,17 @@ fn aggregate_event(
     partition_by: &str,
     iter_regex: &str,
 ) -> Result<DataFrame, PolarsError> {
-    // Get non-id cols
+    // Get non-id cols & skip starting age
+    let initial_step = if iter_regex.ends_with("_") {
+        &format!("{}{}", iter_regex, 0)
+    } else {
+        &format!("{}_{}", iter_regex, 0)
+    };
+
     let agg_cols: Vec<String> = table
         .get_column_names()
         .into_par_iter()
-        .filter(|s| s.to_string().contains(iter_regex))
+        .filter(|s| s.to_string().contains(iter_regex) & s.to_string().ne(initial_step))
         .map(|v| v.to_string())
         .collect();
 
@@ -70,19 +77,19 @@ fn convert(
         .with_columns(
             agg_cols
                 .into_par_iter()
-                .map(|col_name| {
-                    return (when(
-                        col(col_name.clone())
-                            .eq(*target_value)
-                            .and(cost_col.is_some()),
-                    )
-                    .then(col(cost_col.unwrap()))
-                    .otherwise(
-                        when(col(col_name.clone()).eq(*target_value))
-                            .then(lit(1))
-                            .otherwise(lit(0 as i64)),
-                    ))
-                    .alias(col_name);
+                .map(|col_name| match cost_col {
+                    Some(cost_col) => {
+                        return (when(col(col_name.clone()).eq(*target_value))
+                            .then(col(cost_col))
+                            .otherwise(lit(0 as i64)))
+                        .alias(col_name);
+                    }
+                    None => {
+                        return (when(col(col_name.clone()).eq(*target_value))
+                            .then(lit(1 as i64))
+                            .otherwise(lit(0 as i64)))
+                        .alias(col_name);
+                    }
                 })
                 .collect::<Vec<Expr>>(),
         )
@@ -94,48 +101,56 @@ pub fn count_values(
     partition_by: &str,
     iter_regex: &str,
 ) -> Result<DataFrame, PolarsError> {
-    let sim_id: i64 = table.column(iter_regex)?.get(0)?.try_extract()?;
+    let mut sim_ids = col_to_vec_i64(&table, partition_by);
+    sim_ids.dedup();
 
-    let container = table
-        .get_column_names()
-        .into_par_iter()
-        .filter(|c| c.contains(iter_regex) == false)
-        .map(|c| {
-            let val_counts = table
-                .select(vec![c])
-                .unwrap()
-                .rename(c, PlSmallStr::from_str("value"))
-                .unwrap()
-                .column("value")
-                .unwrap()
-                .as_series()
-                .unwrap()
-                .value_counts(false, false, PlSmallStr::from_str(c), false)
-                .expect("failed to count values");
+    let mut sim_results = vec![];
+    for sim_id in sim_ids {
+        let container = table
+            .get_column_names()
+            .into_par_iter()
+            .filter(|c| c.contains(iter_regex))
+            .map(|c| {
+                let val_counts = table
+                    .select(vec![c])
+                    .unwrap()
+                    .rename(c, PlSmallStr::from_str("value"))
+                    .unwrap()
+                    .column("value")
+                    .unwrap()
+                    .as_series()
+                    .unwrap()
+                    .value_counts(false, false, PlSmallStr::from_str(c), false)
+                    .expect("failed to count values");
 
-            return val_counts
-                .lazy()
-                .with_column(lit(sim_id).alias(partition_by))
-                .select([col(partition_by), col("value"), col(c.to_string())]);
-        })
-        .collect::<Vec<LazyFrame>>();
+                return val_counts
+                    .clone()
+                    .lazy()
+                    .with_column(lit(sim_id).alias(partition_by))
+                    .select([col(partition_by), col("value"), col(c.to_string())]);
+            })
+            .collect::<Vec<LazyFrame>>();
 
-    // update table
-    let mut df = container[0].clone();
-    for idx in 1..container.len() {
-        df = df.lazy().join(
-            container[idx].clone(),
-            [col(partition_by), col("value")],
-            [col(partition_by), col("value")],
-            JoinArgs::new(JoinType::Left),
-        );
+        // update table
+        let mut df = container[0].clone();
+        for idx in 1..container.len() {
+            df = df.lazy().join(
+                container[idx].clone(),
+                [col(partition_by), col("value")],
+                [col(partition_by), col("value")],
+                JoinArgs::new(JoinType::Left),
+            );
+        }
+        sim_results.push(df);
     }
 
-    // Replace nulls with zero
-    let df: DataFrame = df
-        .fill_null(0)
-        .sort(["value"], SortMultipleOptions::default())
-        .collect()?;
+    // Combine results
+    let df = concat(sim_results, UnionArgs::default())?;
 
-    return Ok(df);
+    // Replace nulls with zero
+    return Ok(df
+        .fill_null(0)
+        .sort([partition_by, "value"], SortMultipleOptions::default())
+        .collect()
+        .expect("failed to sort..."));
 }

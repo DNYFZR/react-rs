@@ -19,31 +19,14 @@ __all__ = [
 ]
 
 
-def _py_data_frame(rust_data_frame) -> _pl.DataFrame:
-    """
-    Internal method for converting Rust DataFrame objects to Python DataFrames
-
-    DO NOT USE IN PYTHON
-    - FOR USE ON RUST BACKEND OUTPUTS ONLY
-
-    Inputs
-    ---
-    - rust_frame : polars DataFrame (Rust only)
-
-    Returns
-    ---
-    polars DataFrame
-    """
-    return _pl.DataFrame(rust_data_frame)
-
-
 # Implement Rust backend functionality in Python
 def simulate(
     df: _pl.DataFrame,
     id_col: str,
     age_col: str,
     cost_col: str,
-    probabilities: _typing.List[float],
+    probs_col: str,
+    # probabilities: _typing.List[float],
     n_sims: int,
     n_steps: int,
     parallel_limit: int,
@@ -71,17 +54,16 @@ def simulate(
     """
     from .react_rs import simulate as rs_sim
 
-    return _py_data_frame(
-        rs_sim(
-            df=df,
-            id_col=id_col,
-            age_col=age_col,
-            cost_col=cost_col,
-            probabilities=probabilities,
-            n_sims=n_sims,
-            n_steps=n_steps,
-            para_limit=parallel_limit,
-        )
+    return rs_sim(
+        df=df,
+        id_col=id_col,
+        age_col=age_col,
+        cost_col=cost_col,
+        probs_col=probs_col,
+        # probabilities=probabilities,
+        n_sims=n_sims,
+        n_steps=n_steps,
+        para_limit=parallel_limit,
     )
 
 
@@ -117,16 +99,14 @@ def constrain(
     """
     from .react_rs import constrain as rs_constrain
 
-    return _py_data_frame(
-        rs_constrain(
-            df=df,
-            constrain_steps=constrain_steps,
-            iter_regex=iter_regex,
-            cost_col=cost_col,
-            constraints=constraints,
-            partition_by=partition_by,
-            para_limit=parallel_limit,
-        )
+    return rs_constrain(
+        df=df,
+        constrain_steps=constrain_steps,
+        iter_regex=iter_regex,
+        cost_col=cost_col,
+        constraints=constraints,
+        partition_by=partition_by,
+        para_limit=parallel_limit,
     )
 
 
@@ -159,14 +139,12 @@ def aggregate(
     """
     from .react_rs import aggregate as rs_agg
 
-    return _py_data_frame(
-        rs_agg(
-            df=df,
-            partition_by=partition_by,
-            iter_regex=iter_regex,
-            target_value=target_value,
-            cost_col=cost_col,
-        )
+    return rs_agg(
+        df=df,
+        partition_by=partition_by,
+        iter_regex=iter_regex,
+        target_value=target_value,
+        cost_col=cost_col,
     )
 
 
@@ -195,10 +173,8 @@ def profile(
     """
     from .react_rs import profile as rs_profile
 
-    return _py_data_frame(
-        rs_profile(
-            df=df,
-            partition_by=partition_by,
-            iter_regex=iter_regex,
-        )
+    return rs_profile(
+        df=df,
+        partition_by=partition_by,
+        iter_regex=iter_regex,
     )
