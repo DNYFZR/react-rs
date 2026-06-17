@@ -42,5 +42,5 @@ jobs:
         with:
           tag: ${{ matrix.os }}-v${{ env.APP_VERSION }}
           name: ${{ matrix.os }} release v${{ env.APP_VERSION }}
-          artifacts: "/target/wheels/*.whl"
+          artifacts: target/wheels/*.whl
           bodyFile: "README.md"
