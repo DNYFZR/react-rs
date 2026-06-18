@@ -29,11 +29,14 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install app via Maturin
+      - name: Build app via Maturin
         uses: PyO3/maturin-action@v1
         with:
-          command: develop
+          command: build
           args: --release
+
+      - name: Install app
+        run: python -m pip install target\wheels\react_rs*.whl
 
       - name: Install Python test dependencies
         run: pip install pytest mock codecov pydocstyle pytest-cov pylint pylint_junit
