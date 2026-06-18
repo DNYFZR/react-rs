@@ -1,12 +1,7 @@
 # Weibull Module Test Script
-import sys
-
 import numpy as np
 import pytest
-
-sys.path.append("..")
-
-from python.react_rs._weibull import Weibull
+from react_rs import Weibull
 
 test_case = [
     {
