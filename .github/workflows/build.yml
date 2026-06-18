@@ -8,6 +8,10 @@ env:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: write
+
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -42,5 +46,5 @@ jobs:
         with:
           tag: ${{ matrix.os }}-v${{ env.APP_VERSION }}
           name: ${{ matrix.os }}-v${{ env.APP_VERSION }}
-          artifacts: "./target/wheels/*.whl"
+          artifacts: "target/wheels/*.whl"
           bodyFile: "README.md"
