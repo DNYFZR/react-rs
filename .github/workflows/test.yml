@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Setup Python env
+        run: python -m venv .venv
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
