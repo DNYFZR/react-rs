@@ -138,7 +138,12 @@ mod react_rs {
     }
 
     #[pyfunction]
-    fn profile(df: &Bound<'_, PyAny>, partition_by: &str, iter_regex: &str) -> PyResult<Py<PyAny>> {
+    fn profile(
+        df: &Bound<'_, PyAny>,
+        partition_by: &str,
+        iter_regex: &str,
+        para_limit: i64,
+    ) -> PyResult<Py<PyAny>> {
         // Convert Python dataset to Rust
         let df = match import_py_dataframe(df) {
             Ok(df) => df,
@@ -146,6 +151,6 @@ mod react_rs {
         };
 
         // Execute value count on dataframe
-        return return_py_dataframe(agg::count_values(&df, partition_by, iter_regex));
+        return return_py_dataframe(agg::count_values(&df, partition_by, iter_regex, para_limit));
     }
 }

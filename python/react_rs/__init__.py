@@ -90,6 +90,8 @@ def constrain(
     in each timestep (length must match number of timesteps in simulation output)
     - partition_by : string column name containing the simulation ID
     - run_method : string trigger for rust run method - options: full / batched / parallel
+    - para_limit : int value for the maximum number of parallelised simulations to run at any one time
+
 
     Returns
     ---
@@ -150,6 +152,7 @@ def profile(
     df: _pl.DataFrame,
     partition_by: str,
     iter_regex: str,
+    parallel_limit: int,
 ) -> _pl.DataFrame:
     """
     Profile (Rust)
@@ -163,6 +166,8 @@ def profile(
     - partition_by : string column name containing the simulation ID
     - iter_regex : string pattern for accessing the unique timesteps in the
     simulation output
+    - para_limit : int value for the maximum number of parallelised simulations to run at any one time
+
 
     Returns
     ---
@@ -175,4 +180,5 @@ def profile(
         df=df,
         partition_by=partition_by,
         iter_regex=iter_regex,
+        para_limit=parallel_limit,
     )
