@@ -100,52 +100,100 @@ pub fn count_values(
     table: &DataFrame,
     partition_by: &str,
     iter_regex: &str,
+    parallel_limit: i64,
 ) -> Result<DataFrame, PolarsError> {
+    // Get unique sim IDs
     let mut sim_ids = col_to_vec_i64(&table, partition_by);
     sim_ids.dedup();
+    let n_sims = sim_ids.len();
 
-    let mut sim_results = vec![];
-    for sim_id in sim_ids {
-        let container = table
-            .get_column_names()
+    // Configure parallel loops
+    let batches = n_sims / parallel_limit as usize;
+    let remainder = n_sims - batches * parallel_limit as usize;
+    let loop_batches = match remainder {
+        0 => batches,
+        _ => batches + 1,
+    };
+
+    // Get vec of timestep col names
+    let active_cols = table
+        .get_column_names()
+        .into_par_iter()
+        .filter(|c| c.contains(iter_regex))
+        .map(|c| c.to_string())
+        .collect::<Vec<String>>();
+
+    // Create simulation profiles within parallel limits
+    let mut df: Vec<LazyFrame> = Vec::with_capacity(n_sims);
+
+    for batch in 0..loop_batches {
+        let batch_size = if n_sims < parallel_limit as usize {
+            n_sims
+        } else if batch > batches {
+            remainder
+        } else {
+            parallel_limit as usize
+        };
+
+        // Run batches of frame chunks in parallel
+        let start_idx = batch * batch_size;
+        let end_idx = start_idx + (batch_size - 1);
+        let mut sim_res = sim_ids[start_idx..=end_idx]
             .into_par_iter()
-            .filter(|c| c.contains(iter_regex))
-            .map(|c| {
-                let val_counts = table
-                    .select(vec![c])
-                    .unwrap()
-                    .rename(c, PlSmallStr::from_str("value"))
-                    .unwrap()
-                    .column("value")
-                    .unwrap()
-                    .as_series()
-                    .unwrap()
-                    .value_counts(false, false, PlSmallStr::from_str(c), false)
-                    .expect("failed to count values");
-
-                return val_counts
+            .map(|sim_id| {
+                // Get simulation table within wider table
+                let sim_table = table
                     .clone()
                     .lazy()
-                    .with_column(lit(sim_id).alias(partition_by))
-                    .select([col(partition_by), col("value"), col(c.to_string())]);
+                    .filter(col(partition_by).eq(*sim_id))
+                    .collect()
+                    .unwrap();
+
+                // Create val count for each timestep
+                let container = active_cols
+                    .clone()
+                    .into_par_iter()
+                    .map(|c| {
+                        let val_counts = sim_table
+                            .select(vec![&c])
+                            .unwrap()
+                            .rename(&c, PlSmallStr::from_str("value"))
+                            .unwrap()
+                            .column("value")
+                            .unwrap()
+                            .as_series()
+                            .unwrap()
+                            .value_counts(false, false, PlSmallStr::from_str(&c), false)
+                            .expect("failed to count values");
+
+                        return val_counts
+                            .clone()
+                            .lazy()
+                            .with_column(lit(*sim_id).alias(partition_by))
+                            .select([col(partition_by), col("value"), col(&c)]);
+                    })
+                    .collect::<Vec<LazyFrame>>();
+
+                // Join timestep cols into single df
+                let mut df = container[0].clone();
+                for idx in 1..container.len() {
+                    df = df.lazy().join(
+                        container[idx].clone(),
+                        [col(partition_by), col("value")],
+                        [col(partition_by), col("value")],
+                        JoinArgs::new(JoinType::Left),
+                    );
+                }
+                return df;
             })
             .collect::<Vec<LazyFrame>>();
 
-        // update table
-        let mut df = container[0].clone();
-        for idx in 1..container.len() {
-            df = df.lazy().join(
-                container[idx].clone(),
-                [col(partition_by), col("value")],
-                [col(partition_by), col("value")],
-                JoinArgs::new(JoinType::Left),
-            );
-        }
-        sim_results.push(df);
+        // push results to output container
+        df.append(&mut sim_res);
     }
 
     // Combine results
-    let df = concat(sim_results, UnionArgs::default())?;
+    let df = concat(df, UnionArgs::default())?;
 
     // Replace nulls with zero
     return Ok(df
