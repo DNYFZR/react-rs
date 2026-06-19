@@ -77,7 +77,7 @@ sim_result_constrained = react_rs.constrain(
     parallel_limit=10,
 )
 
-# Aggregate simulation outputs)
+# Aggregate simulation outputs
 sim_result_agg = react_rs.aggregate(
     df=sim_result,
     partition_by="sim_id",
@@ -99,12 +99,14 @@ sim_profile = react_rs.profile(
     df=sim_result,
     partition_by="sim_id",
     iter_regex="step",
+    parallel_limit=10, 
 )
 
 sim_constrained_profile = react_rs.profile(
     df=sim_result_constrained,
     partition_by="sim_id",
     iter_regex="step",
+    parallel_limit=10, 
 )
 ```
 

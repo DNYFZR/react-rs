@@ -169,6 +169,7 @@ class TestReactRS:
             df=sim_result,
             partition_by="sim_id",
             iter_regex="step",
+            parallel_limit=test_case["parallel_limit"],
         )
 
         if "value" not in sim_profile.columns:
