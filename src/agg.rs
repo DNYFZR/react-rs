@@ -10,12 +10,7 @@ pub fn aggregate(
     target_value: i64,
     cost_col: Option<&str>,
 ) -> Result<DataFrame, PolarsError> {
-    let converted_table = match cost_col {
-        Some(cost_col) => convert(&df, iter_regex, &target_value, Some(cost_col)),
-        None => convert(&df, iter_regex, &target_value, None),
-    };
-
-    match converted_table {
+    match convert(df, iter_regex, &target_value, cost_col) {
         Ok(table) => return aggregate_event(table, partition_by, iter_regex),
         Err(e) => return Err(e),
     };
@@ -57,7 +52,7 @@ fn aggregate_event(
 }
 
 fn convert(
-    table: &DataFrame,
+    table: DataFrame,
     iter_regex: &str,
     target_value: &i64,
     cost_col: Option<&str>,
@@ -72,7 +67,6 @@ fn convert(
 
     // Run conversion
     return Ok(table
-        .clone()
         .lazy()
         .with_columns(
             agg_cols
@@ -103,7 +97,7 @@ pub fn count_values(
     parallel_limit: i64,
 ) -> Result<DataFrame, PolarsError> {
     // Get unique sim IDs
-    let mut sim_ids = col_to_vec_i64(&table, partition_by);
+    let mut sim_ids = col_to_vec_i64(table, partition_by);
     sim_ids.dedup();
     let n_sims = sim_ids.len();
 
