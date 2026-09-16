@@ -40,7 +40,6 @@ mod react_rs {
         // Internal function to handle conversion of Rust output to Python
         match rust_output {
             Ok(frame) => Python::attach(|py| {
-                // let py_df: Py<PyAny> = (PyDataFrame { df: frame.into() }).into_py_any(py).unwrap();
                 let py_df: Py<PyAny> = (PyDataFrame(frame.into())).into_py_any(py).unwrap();
                 Ok(py_df)
             }),
@@ -58,7 +57,6 @@ mod react_rs {
         age_col: &str,
         cost_col: &str,
         probs_col: &str,
-        // probabilities: Vec<f64>,
         n_sims: i64,
         n_steps: i64,
         para_limit: i64,
